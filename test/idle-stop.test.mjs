@@ -33,3 +33,8 @@ test('an established CDP connection resets the counter', () => {
   busy.run(); busy.run(); busy.run(); busy.run();
   assert.equal(busy.halted(), false);
 });
+
+test('default state dir is tmpfs (/run), not the persistent root volume', async () => {
+  const { readFileSync } = await import('node:fs');
+  assert.match(readFileSync(script, 'utf8'), /RB_STATE_DIR:-\/run\/rb-idle/);
+});

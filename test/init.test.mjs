@@ -55,3 +55,16 @@ test('accepting provisions key, sg, instance, saves ids, then stops the instance
   assert.equal(h.saved.at(-1).securityGroupId, 'sg-1');
   assert.ok(h.calls.includes('stopInstance'), 'leaves the instance stopped to avoid idle cost');
 });
+
+test('waits for the instance to be fully stopped before telling the user to run up', async () => {
+  const h = harness({ answers: [true] });
+  await init(h.deps);
+  assert.ok(h.calls.indexOf('waitStopped') > h.calls.indexOf('stopInstance'));
+});
+
+test('fails loudly, leaving the instance alone, when first-boot setup never succeeds', async () => {
+  const h = harness({ answers: [true] });
+  h.deps.ssh = async () => { throw new Error('cloud-init exited 1'); };
+  await assert.rejects(init(h.deps), /cloud-init-output\.log/);
+  assert.ok(!h.calls.includes('stopInstance'));
+});

@@ -4,8 +4,8 @@ export function buildUserData({ cfg, entrypoint, idleStop }) {
   return `#!/bin/bash
 set -euxo pipefail
 export DEBIAN_FRONTEND=noninteractive
-apt-get update
-apt-get install -y docker.io
+apt-get -o DPkg::Lock::Timeout=600 update
+apt-get -o DPkg::Lock::Timeout=600 install -y docker.io
 systemctl enable --now docker
 
 install -d /opt/rb
@@ -20,6 +20,7 @@ Description=remote-browser idle stop
 Type=oneshot
 Environment=CDP_PORT=${cfg.cdpPort}
 Environment=IDLE_MINUTES=${cfg.idleMinutes}
+Environment=RB_STATE_DIR=/run/rb-idle
 ExecStart=/usr/local/bin/rb-idle-stop
 EOF
 
@@ -32,6 +33,10 @@ OnUnitActiveSec=60
 [Install]
 WantedBy=timers.target
 EOF
+
+# Drop dead client sessions quickly so a laptop network change does not leave stale -R listeners.
+printf 'ClientAliveInterval 15\nClientAliveCountMax 3\n' > /etc/ssh/sshd_config.d/rb.conf
+systemctl reload ssh
 
 systemctl daemon-reload
 systemctl enable --now rb-idle-stop.timer

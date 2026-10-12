@@ -7,7 +7,7 @@ const ud = buildUserData({ cfg: DEFAULTS, entrypoint: '#!/bin/sh\necho hi\n', id
 
 test('starts with a bash shebang and installs docker', () => {
   assert.ok(ud.startsWith('#!/bin/bash'));
-  assert.match(ud, /apt-get install -y docker\.io/);
+  assert.match(ud, /apt-get .*install -y docker\.io/);
 });
 test('runs the browser container on the host network, restarting on boot', () => {
   assert.match(ud, /docker run -d --name rb-chrome --restart unless-stopped --network host --ipc=host --init/);
@@ -23,4 +23,15 @@ test('idle timer runs every minute with configured idle minutes', () => {
 });
 test('stays under the 16KB user-data limit', () => {
   assert.ok(Buffer.byteLength(ud) < 16 * 1024);
+});
+
+test('idle-stop counter lives on tmpfs so it resets every boot', () => {
+  assert.match(ud, /Environment=RB_STATE_DIR=\/run\/rb-idle/);
+});
+test('sshd drops dead client sessions so stale -R ports free up', () => {
+  assert.match(ud, /ClientAliveInterval 15/);
+  assert.match(ud, /ClientAliveCountMax 3/);
+});
+test('apt waits for the first-boot lock instead of failing', () => {
+  assert.match(ud, /DPkg::Lock::Timeout=600/);
 });

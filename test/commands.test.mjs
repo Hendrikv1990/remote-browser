@@ -69,3 +69,44 @@ test('status reports instance, tunnel and last mode', async () => {
   const s = await status({ ...h.deps, readState: () => ({ mode: 'remote' }) });
   assert.deepEqual(s, { instance: 'running', tunnel: true, mode: 'remote' });
 });
+
+test('up: runs docker via sudo (ubuntu is not in the docker group)', async () => {
+  const h = harness();
+  await up(h.deps);
+  const restart = h.sshCalls.find((a) => a.includes('docker') && a.includes('restart'));
+  assert.deepEqual(restart.slice(-4), ['sudo', 'docker', 'restart', 'rb-chrome']);
+});
+
+test('up: waits for a stopping instance to stop before starting it', async () => {
+  const h = harness();
+  const states = ['stopping', 'running'];
+  h.deps.aws.describeInstance = async () => ({ state: states.length > 1 ? states.shift() : states[0], publicIp: '9.9.9.9' });
+  await up(h.deps);
+  const order = h.awsCalls.map((c) => c[0]);
+  assert.ok(order.indexOf('waitStopped') !== -1 && order.indexOf('waitStopped') < order.indexOf('start'));
+});
+
+test('up: does not start an instance that is already running', async () => {
+  const h = harness();
+  await up(h.deps);
+  assert.ok(!h.awsCalls.some((c) => c[0] === 'start'));
+});
+
+test('up: removes an orphaned control socket after the exit attempt, before opening the tunnel', async () => {
+  const h = harness({ sshFailsOn: ['-O exit'] });
+  const events = [];
+  const origSsh = h.deps.ssh;
+  h.deps.ssh = async (args) => { events.push(args.includes('-fN') ? 'tunnel' : args.includes('exit') ? 'exit' : 'other'); return origSsh(args); };
+  h.deps.rm = (p) => events.push(`rm ${p}`);
+  await up(h.deps);
+  assert.ok(events.indexOf('rm /s.sock') > events.indexOf('exit'));
+  assert.ok(events.indexOf('rm /s.sock') < events.indexOf('tunnel'));
+});
+
+test('up: starts a stopped instance', async () => {
+  const h = harness();
+  const states = ['stopped', 'running'];
+  h.deps.aws.describeInstance = async () => ({ state: states.length > 1 ? states.shift() : states[0], publicIp: '9.9.9.9' });
+  await up(h.deps);
+  assert.ok(h.awsCalls.some((c) => c[0] === 'start'));
+});

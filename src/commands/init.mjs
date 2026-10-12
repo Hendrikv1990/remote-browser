@@ -56,11 +56,19 @@ export async function init({
   await aws.waitRunning(instanceId);
   const { publicIp } = await aws.describeInstance(instanceId);
   log('Waiting for first-boot setup (docker install, image pull)...');
-  for (let i = 0; i < 60; i++) {
-    try { await ssh([...sshBase(cfg, publicIp), 'cloud-init', 'status', '--wait']); break; }
+  let booted = false;
+  for (let i = 0; i < 60 && !booted; i++) {
+    try { await ssh([...sshBase(cfg, publicIp), 'cloud-init', 'status', '--wait']); booted = true; }
     catch { await sleep(5000); }
+  }
+  if (!booted) {
+    throw new Error(
+      `First-boot setup on ${instanceId} did not finish cleanly. The instance is still running (billing). ` +
+      `Inspect /var/log/cloud-init-output.log over ssh, then stop it with: remote-browser down`,
+    );
   }
 
   await aws.stopInstance(instanceId);
+  await aws.waitStopped(instanceId);
   log(`Provisioned ${instanceId}. Instance stopped to avoid idle cost. Run: remote-browser up`);
 }

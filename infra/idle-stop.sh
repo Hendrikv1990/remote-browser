@@ -3,7 +3,7 @@
 # Run once a minute by rb-idle-stop.timer. An open SSH tunnel alone does not count as activity.
 CDP_PORT="${CDP_PORT:-9222}"
 IDLE_MINUTES="${IDLE_MINUTES:-30}"
-STATE_DIR="${RB_STATE_DIR:-/var/lib/rb-idle}"
+STATE_DIR="${RB_STATE_DIR:-/run/rb-idle}"
 mkdir -p "$STATE_DIR"
 f="$STATE_DIR/idle_ticks"
 
