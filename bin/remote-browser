@@ -28,7 +28,9 @@ const cmds = { up, down, status };
 const name = process.argv[2];
 if (name === 'init') {
   const { init } = await import('../src/commands/init.mjs');
-  await init(deps);
+  const rl = (await import('node:readline/promises')).createInterface({ input: process.stdin, output: process.stdout });
+  await init({ ...deps, confirm: async (q) => /^y(es)?$/i.test((await rl.question(`${q} [y/N] `)).trim()) });
+  rl.close();
 } else if (cmds[name]) {
   await cmds[name](deps);
 } else {

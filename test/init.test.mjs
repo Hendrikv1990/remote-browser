@@ -1,0 +1,57 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { DEFAULTS } from '../src/config.mjs';
+import { init } from '../src/commands/init.mjs';
+
+function harness({ answers }) {
+  const calls = []; const saved = []; const asked = [];
+  const aws = {
+    run: async (args) => {
+      calls.push(args.join(' '));
+      const j = args.join(' ');
+      if (j.includes('ssm get-parameter')) return JSON.stringify({ Parameter: { Value: 'ami-123' } });
+      if (j.includes('create-key-pair')) return JSON.stringify({ KeyMaterial: 'PEM' });
+      if (j.includes('create-security-group')) return JSON.stringify({ GroupId: 'sg-1' });
+      if (j.includes('run-instances')) return JSON.stringify({ Instances: [{ InstanceId: 'i-1' }] });
+      return '{}';
+    },
+    ec2: async (args) => { calls.push('ec2 ' + args.join(' ')); return '{}'; },
+    waitRunning: async () => calls.push('waitRunning'),
+    waitStopped: async () => calls.push('waitStopped'),
+    stopInstance: async () => calls.push('stopInstance'),
+    describeInstance: async () => ({ state: 'running', publicIp: '9.9.9.9' }),
+    replaceSshRule: async (sg, cidr) => calls.push(`rule ${sg} ${cidr}`),
+  };
+  const files = [];
+  return {
+    calls, saved, asked, files,
+    deps: {
+      cfg: { ...DEFAULTS }, aws, ssh: async () => 'done', sleep: async () => {}, log: () => {},
+      myIp: async () => '1.2.3.4',
+      confirm: async (q) => { asked.push(q); return answers.shift(); },
+      save: (c) => saved.push(c),
+      writeKey: (path, pem) => files.push([path, pem]),
+      entrypoint: '#!/bin/sh\n', idleStop: '#!/bin/sh\n',
+    },
+  };
+}
+
+test('declining the billable step creates nothing billable and saves nothing', async () => {
+  const h = harness({ answers: [false] });
+  await init(h.deps);
+  assert.ok(!h.calls.some((c) => c.includes('run-instances')));
+  assert.equal(h.saved.length, 0);
+});
+
+test('accepting provisions key, sg, instance, saves ids, then stops the instance', async () => {
+  const h = harness({ answers: [true] });
+  await init(h.deps);
+  assert.deepEqual(h.files[0], [DEFAULTS.keyPath, 'PEM']);
+  const run = h.calls.find((c) => c.includes('run-instances'));
+  assert.ok(run.includes('--instance-type t4g.large'));
+  assert.ok(run.includes('--instance-initiated-shutdown-behavior stop'));
+  assert.ok(run.includes('--image-id ami-123'));
+  assert.equal(h.saved.at(-1).instanceId, 'i-1');
+  assert.equal(h.saved.at(-1).securityGroupId, 'sg-1');
+  assert.ok(h.calls.includes('stopInstance'), 'leaves the instance stopped to avoid idle cost');
+});
