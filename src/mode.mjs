@@ -1,11 +1,14 @@
 export async function probeCdp(cdpPort, fetchFn = fetch, timeoutMs = 1500) {
+  // A ref'd timer, not AbortSignal.timeout (unref'd): the probe must resolve even if nothing else keeps the loop alive.
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), timeoutMs);
   try {
-    const res = await fetchFn(`http://127.0.0.1:${cdpPort}/json/version`, {
-      signal: AbortSignal.timeout(timeoutMs),
-    });
+    const res = await fetchFn(`http://127.0.0.1:${cdpPort}/json/version`, { signal: ctl.signal });
     return Boolean(res.ok);
   } catch {
     return false;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
