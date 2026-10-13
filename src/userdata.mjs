@@ -36,7 +36,7 @@ EOF
 
 # Drop dead client sessions quickly so a laptop network change does not leave stale -R listeners.
 printf 'ClientAliveInterval 15\nClientAliveCountMax 3\n' > /etc/ssh/sshd_config.d/rb.conf
-systemctl reload ssh
+systemctl try-reload-or-restart ssh
 
 systemctl daemon-reload
 systemctl enable --now rb-idle-stop.timer

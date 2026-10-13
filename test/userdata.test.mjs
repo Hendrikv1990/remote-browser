@@ -35,3 +35,8 @@ test('sshd drops dead client sessions so stale -R ports free up', () => {
 test('apt waits for the first-boot lock instead of failing', () => {
   assert.match(ud, /DPkg::Lock::Timeout=600/);
 });
+
+test('does not hard-reload ssh: it is socket-activated and inactive during first boot, and set -e would abort the script', () => {
+  assert.doesNotMatch(ud, /systemctl reload ssh/);
+  assert.match(ud, /systemctl try-reload-or-restart ssh/);
+});
