@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync, chmodSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, chmodSync, existsSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { saveConfig } from '../config.mjs';
@@ -18,9 +18,13 @@ export async function init({
   cfg, aws, ssh, sleep, log, confirm, myIp,
   save = saveConfig,
   writeKey = defaultWriteKey,
+  hasKeyFile = existsSync,
   entrypoint = readFileSync(root('container/entrypoint.sh'), 'utf8'),
   idleStop = readFileSync(root('infra/idle-stop.sh'), 'utf8'),
 }) {
+  if (cfg.instanceId) {
+    throw new Error(`Already provisioned (${cfg.instanceId}). Use \`remote-browser up\`; to start over, delete the instance in AWS and clear instanceId in the config.`);
+  }
   const ok = await confirm(
     `Create in ${cfg.region} (profile ${cfg.awsProfile}): 1 key pair, 1 security group (SSH from your IP only), ` +
     `1 ${cfg.instanceType} instance with a 20 GB gp3 disk. Billable (~$0.067/hr while running, ~$2/mo disk). Proceed?`,
@@ -29,13 +33,27 @@ export async function init({
 
   const ami = JSON.parse(await aws.run(['ssm', 'get-parameter', '--name', AMI_PARAM])).Parameter.Value;
 
-  log('Creating key pair...');
-  const key = JSON.parse(await aws.run(['ec2', 'create-key-pair', '--key-name', cfg.keyName, '--key-type', 'ed25519']));
-  writeKey(cfg.keyPath, key.KeyMaterial);
+  // Look before create: a failed earlier run (e.g. RunInstances denied) leaves these behind, and config is only saved after launch.
+  const keys = JSON.parse(await aws.run(['ec2', 'describe-key-pairs', '--filters', `Name=key-name,Values=${cfg.keyName}`])).KeyPairs ?? [];
+  if (keys.length === 0) {
+    log('Creating key pair...');
+    const key = JSON.parse(await aws.run(['ec2', 'create-key-pair', '--key-name', cfg.keyName, '--key-type', 'ed25519']));
+    writeKey(cfg.keyPath, key.KeyMaterial);
+  } else if (!hasKeyFile(cfg.keyPath)) {
+    throw new Error(`Key pair "${cfg.keyName}" exists in AWS but its private key is not at ${cfg.keyPath} (AWS cannot show it again). Delete the key pair in the EC2 console and run init again.`);
+  } else {
+    log(`Reusing existing key pair "${cfg.keyName}".`);
+  }
 
-  log('Creating security group...');
-  const sg = JSON.parse(await aws.run(['ec2', 'create-security-group', '--group-name', 'remote-browser', '--description', 'remote-browser SSH']));
-  await aws.replaceSshRule(sg.GroupId, `${await myIp()}/32`);
+  const groups = JSON.parse(await aws.run(['ec2', 'describe-security-groups', '--filters', 'Name=group-name,Values=remote-browser'])).SecurityGroups ?? [];
+  let sgId = groups[0]?.GroupId;
+  if (sgId) {
+    log(`Reusing existing security group ${sgId}.`);
+  } else {
+    log('Creating security group...');
+    sgId = JSON.parse(await aws.run(['ec2', 'create-security-group', '--group-name', 'remote-browser', '--description', 'remote-browser SSH'])).GroupId;
+  }
+  await aws.replaceSshRule(sgId, `${await myIp()}/32`);
 
   log('Launching instance...');
   const userData = buildUserData({ cfg, entrypoint, idleStop });
@@ -44,14 +62,14 @@ export async function init({
     '--image-id', ami,
     '--instance-type', cfg.instanceType,
     '--key-name', cfg.keyName,
-    '--security-group-ids', sg.GroupId,
+    '--security-group-ids', sgId,
     '--instance-initiated-shutdown-behavior', 'stop',
     '--block-device-mappings', 'DeviceName=/dev/sda1,Ebs={VolumeSize=20,VolumeType=gp3}',
     '--tag-specifications', 'ResourceType=instance,Tags=[{Key=Name,Value=remote-browser}]',
     '--user-data', userData,
   ]));
   const instanceId = run.Instances[0].InstanceId;
-  save({ ...cfg, instanceId, securityGroupId: sg.GroupId });
+  save({ ...cfg, instanceId, securityGroupId: sgId });
 
   await aws.waitRunning(instanceId);
   const { publicIp } = await aws.describeInstance(instanceId);

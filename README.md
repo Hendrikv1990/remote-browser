@@ -42,7 +42,7 @@ SessionStart hook for `~/.claude/settings.json`:
 `infra/iam-policy.json` limits what the credential can do: only `t4g.large`, only `eu-west-1`, tagged-instance start/stop, no terminate or delete. If you change `region`, change `aws:RequestedRegion` in the policy too. IAM cannot cap *how many* instances or *how long* they run, so add a budget (console, your admin login, not the remote-browser user):
 
 1. Billing > Budgets > Create budget > Cost budget, monthly, about $15. Alerts by email at 50% and 100% of actual spend and 100% of forecast.
-2. Create a customer-managed IAM policy `remote-browser-budget-deny` from `infra/budget-deny-policy.json`. It denies `RunInstances` and `StartInstances` but not `StopInstances`, so `remote-browser down` still works.
+2. Create a customer-managed IAM policy `remote-browser-budget-deny` from `infra/budget-deny-policy.json`. **Do not attach it to the user yourself**: an explicit deny overrides every allow, so attaching it by hand blocks `init` and `up` immediately. Only the budget action (step 3) should attach it. It denies `RunInstances` and `StartInstances` but not `StopInstances`, so `remote-browser down` still works.
 3. On the 100% actual alert, add a **budget action**: "Apply IAM policy" > `remote-browser-budget-deny` > the remote-browser IAM user. Optionally add a second action on the same threshold, "Stop EC2 instances", for the instance id from `~/.remote-browser/config.json` (`instanceId`). Both need an execution role that `budgets.amazonaws.com` can assume; the console offers to create it. Choose automatic execution, not manual approval, or it will not protect you while you sleep.
 4. After a trigger, remove the deny policy from the user to use the tool again.
 
