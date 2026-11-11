@@ -1,28 +1,12 @@
 #!/usr/bin/env node
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { loadConfig } from '../src/config.mjs';
-import { makeAws } from '../src/aws.mjs';
-import { probeCdp } from '../src/mode.mjs';
-import { readState } from '../src/state.mjs';
-import { socketPath } from '../src/tunnel.mjs';
+import { makeDeps } from '../src/deps.mjs';
 import { up } from '../src/commands/up.mjs';
 import { down } from '../src/commands/down.mjs';
 import { status } from '../src/commands/status.mjs';
 
-const execFileP = promisify(execFile);
 const cfg = loadConfig();
-const deps = {
-  cfg,
-  aws: makeAws(cfg),
-  ssh: async (args) => (await execFileP('ssh', args)).stdout,
-  probe: probeCdp,
-  myIp: async () => (await (await fetch('https://checkip.amazonaws.com')).text()).trim(),
-  sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
-  log: (m) => console.log(m),
-  sock: socketPath(),
-  readState,
-};
+const deps = makeDeps(cfg);
 
 const cmds = { up, down, status };
 const name = process.argv[2];

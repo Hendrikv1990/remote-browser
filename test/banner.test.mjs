@@ -11,3 +11,7 @@ test('local banner tells how to recover', () => {
   assert.match(b, /remote-browser up/);
   assert.match(b, /reconnect \/mcp/);
 });
+test('auto-up banner says starting on demand', () => {
+  assert.match(bannerFor('local', true), /REMOTE STARTING/);
+  assert.equal(bannerFor('remote', true), 'Playwright browser: REMOTE (AWS, isolated context)');
+});

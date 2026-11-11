@@ -1,6 +1,13 @@
 #!/usr/bin/env node
 import { loadConfig } from '../src/config.mjs';
 import { runLauncher } from '../src/launcher.mjs';
+import { makeDeps } from '../src/deps.mjs';
+import { ensureRemote, autoUpEnabled } from '../src/autoup.mjs';
+import { up } from '../src/commands/up.mjs';
 
-const child = await runLauncher({ cfg: loadConfig(), argv: process.argv.slice(2) });
+const cfg = loadConfig();
+// stdout is the MCP protocol channel: all logging goes to stderr.
+const deps = makeDeps(cfg, (m) => console.error(m));
+const ensure = autoUpEnabled() && cfg.instanceId ? () => ensureRemote({ ...deps, upFn: () => up(deps) }) : null;
+const child = await runLauncher({ cfg, argv: process.argv.slice(2), ensure });
 child.on('exit', (code, sig) => process.exit(code ?? (sig ? 1 : 0)));
